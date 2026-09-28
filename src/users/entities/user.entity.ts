@@ -1,3 +1,4 @@
+import { Exclude } from 'class-transformer';
 import {
   Column,
   CreateDateColumn,
@@ -16,7 +17,9 @@ export class User {
   @Column({ unique: true, length: 255 })
   email!: string;
 
-  // Will store a bcrypt hash (added with auth); excluded from default SELECTs
+  // bcrypt hash. Not selected by default, and @Exclude strips it from any
+  // response serialized by the global ClassSerializerInterceptor.
+  @Exclude()
   @Column({ select: false })
   password!: string;
 
