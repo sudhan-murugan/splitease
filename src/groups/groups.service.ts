@@ -8,6 +8,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { User } from '../users/entities/user.entity';
+import { PublicUser, toPublicUser } from '../users/public-user';
 import { UsersService } from '../users/users.service';
 import { AddMemberDto } from './dto/add-member.dto';
 import { CreateGroupDto } from './dto/create-group.dto';
@@ -16,8 +17,6 @@ import { Group } from './entities/group.entity';
 
 // Postgres error code for unique constraint violations
 const PG_UNIQUE_VIOLATION = '23505';
-
-type PublicUser = Pick<User, 'id' | 'name' | 'email'>;
 
 export interface GroupSummary {
   id: string;
@@ -149,8 +148,16 @@ export class GroupsService {
 
     return this.findOneForUser(groupId, requesterId);
   }
-}
 
-function toPublicUser(user: User): PublicUser {
-  return { id: user.id, name: user.name, email: user.email };
+  // Guard for group-scoped resources: 404 if the group doesn't exist,
+  // 403 if the user isn't a member. One query on the happy path.
+  async assertMember(groupId: string, userId: string): Promise<void> {
+    if (await this.membersRepo.existsBy({ groupId, userId })) {
+      return;
+    }
+    if (!(await this.groupsRepo.existsBy({ id: groupId }))) {
+      throw new NotFoundException('Group not found');
+    }
+    throw new ForbiddenException('You are not a member of this group');
+  }
 }
