@@ -16,6 +16,10 @@ export class UsersService {
     return this.usersRepo.findOneBy({ id });
   }
 
+  findByEmail(email: string): Promise<User | null> {
+    return this.usersRepo.findOneBy({ email });
+  }
+
   // Explicitly selects the password hash (hidden by default) for login checks
   findByEmailWithPassword(email: string): Promise<User | null> {
     return this.usersRepo
