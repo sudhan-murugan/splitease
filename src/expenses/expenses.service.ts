@@ -3,43 +3,15 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { GroupMember } from '../groups/entities/group-member.entity';
 import { GroupsService } from '../groups/groups.service';
-import { PublicUser, toPublicUser } from '../users/public-user';
+import { toPublicUser } from '../users/public-user';
+import { calculateBalances } from './balances';
 import { CreateExpenseDto } from './dto/create-expense.dto';
+import { ExpenseView, PaginatedExpenses } from './dto/expense-view.dto';
+import { GroupBalances } from './dto/group-balances.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { ExpenseSplit } from './entities/expense-split.entity';
 import { Expense } from './entities/expense.entity';
 import { formatCents, splitEqually, toCents } from './money';
-
-export interface ExpenseView {
-  id: string;
-  description: string;
-  amount: string;
-  createdAt: Date;
-  paidBy: PublicUser;
-  splits: (PublicUser & { shareAmount: string })[];
-}
-
-export interface Paginated<T> {
-  data: T[];
-  meta: { page: number; limit: number; total: number; totalPages: number };
-}
-
-export interface MemberBalance extends PublicUser {
-  paid: string; // total this member paid for the group
-  owed: string; // total of this member's shares
-  net: string; // paid - owed: > 0 is owed money, < 0 owes money
-}
-
-export interface Settlement {
-  from: PublicUser; // debtor
-  to: PublicUser; // creditor
-  amount: string;
-}
-
-export interface GroupBalances {
-  balances: MemberBalance[];
-  settlements: Settlement[];
-}
 
 @Injectable()
 export class ExpensesService {
@@ -112,7 +84,7 @@ export class ExpensesService {
     groupId: string,
     { page, limit }: PaginationQueryDto,
     requesterId: string,
-  ): Promise<Paginated<ExpenseView>> {
+  ): Promise<PaginatedExpenses> {
     await this.groupsService.assertMember(groupId, requesterId);
 
     const [expenses, total] = await this.expensesRepo.findAndCount({
@@ -128,8 +100,7 @@ export class ExpensesService {
     };
   }
 
-  // net = (what a member paid) - (sum of their shares), aggregated in SQL.
-  // Nets always sum to zero because each expense's shares sum to its amount.
+  // Totals are aggregated in SQL; the net/settlement math lives in balances.ts
   async getBalances(
     groupId: string,
     requesterId: string,
@@ -157,26 +128,11 @@ export class ExpensesService {
 
     const paid = new Map(paidRows.map((r) => [r.userId, toCents(r.total)]));
     const owed = new Map(owedRows.map((r) => [r.userId, toCents(r.total)]));
-
-    const rows = members
-      .map(({ user }) => {
-        const paidCents = paid.get(user.id) ?? 0;
-        const owedCents = owed.get(user.id) ?? 0;
-        return { user: toPublicUser(user), paidCents, owedCents };
-      })
-      .sort((a, b) => a.user.name.localeCompare(b.user.name));
-
-    return {
-      balances: rows.map(({ user, paidCents, owedCents }) => ({
-        ...user,
-        paid: formatCents(paidCents),
-        owed: formatCents(owedCents),
-        net: formatCents(paidCents - owedCents),
-      })),
-      settlements: settle(
-        rows.map((r) => ({ user: r.user, net: r.paidCents - r.owedCents })),
-      ),
-    };
+    return calculateBalances(
+      members.map((m) => toPublicUser(m.user)),
+      paid,
+      owed,
+    );
   }
 }
 
@@ -191,36 +147,4 @@ function toExpenseView(expense: Expense): ExpenseView {
       .map((s) => ({ ...toPublicUser(s.user), shareAmount: s.shareAmount }))
       .sort((a, b) => a.name.localeCompare(b.name)),
   };
-}
-
-// Turns net balances into "who pays whom": repeatedly match the largest
-// debtor with the largest creditor. Produces at most n-1 transfers.
-function settle(nets: { user: PublicUser; net: number }[]): Settlement[] {
-  const byMagnitude = (a: { net: number }, b: { net: number }) =>
-    Math.abs(b.net) - Math.abs(a.net);
-  const creditors = nets
-    .filter((n) => n.net > 0)
-    .map((n) => ({ ...n }))
-    .sort(byMagnitude);
-  const debtors = nets
-    .filter((n) => n.net < 0)
-    .map((n) => ({ ...n }))
-    .sort(byMagnitude);
-
-  const settlements: Settlement[] = [];
-  let c = 0;
-  let d = 0;
-  while (c < creditors.length && d < debtors.length) {
-    const amount = Math.min(creditors[c].net, -debtors[d].net);
-    settlements.push({
-      from: debtors[d].user,
-      to: creditors[c].user,
-      amount: formatCents(amount),
-    });
-    creditors[c].net -= amount;
-    debtors[d].net += amount;
-    if (creditors[c].net === 0) c++;
-    if (debtors[d].net === 0) d++;
-  }
-  return settlements;
 }

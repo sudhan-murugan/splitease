@@ -8,30 +8,16 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { User } from '../users/entities/user.entity';
-import { PublicUser, toPublicUser } from '../users/public-user';
+import { toPublicUser } from '../users/public-user';
 import { UsersService } from '../users/users.service';
 import { AddMemberDto } from './dto/add-member.dto';
 import { CreateGroupDto } from './dto/create-group.dto';
+import { GroupDetails, GroupSummary } from './dto/group-responses.dto';
 import { GroupMember, GroupRole } from './entities/group-member.entity';
 import { Group } from './entities/group.entity';
 
 // Postgres error code for unique constraint violations
 const PG_UNIQUE_VIOLATION = '23505';
-
-export interface GroupSummary {
-  id: string;
-  name: string;
-  createdAt: Date;
-  role: GroupRole; // the caller's role in this group
-}
-
-export interface GroupDetails {
-  id: string;
-  name: string;
-  createdAt: Date;
-  createdBy: PublicUser;
-  members: (PublicUser & { role: GroupRole })[];
-}
 
 @Injectable()
 export class GroupsService {
