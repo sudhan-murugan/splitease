@@ -65,19 +65,29 @@ With `DB_SYNCHRONIZE=true`, the tables are created automatically on first start.
 
 ## Environment Variables
 
-| Variable         | Required | Default | Description                                                          |
-| ---------------- | -------- | ------- | -------------------------------------------------------------------- |
-| `PORT`           | no       | `3000`  | HTTP port                                                            |
-| `NODE_ENV`       | no       | —       | `development` / `production`                                         |
-| `DB_HOST`        | yes      | —       | PostgreSQL host                                                      |
-| `DB_PORT`        | no       | `5432`  | PostgreSQL port                                                      |
-| `DB_USERNAME`    | yes      | —       | Database user                                                        |
-| `DB_PASSWORD`    | yes      | —       | Database password                                                    |
-| `DB_NAME`        | yes      | —       | Database name                                                        |
-| `DB_SSL`         | no       | `false` | `true` for cloud providers that require TLS (e.g. Neon)              |
-| `DB_SYNCHRONIZE` | no       | `false` | Auto-create tables from entities. Use `true` only in development.    |
-| `JWT_SECRET`     | yes      | —       | Long random secret, e.g. `openssl rand -hex 64`                      |
-| `JWT_EXPIRES_IN` | yes      | —       | Token lifetime, e.g. `15m`, `1h`, `1d`                               |
+| Variable            | Required | Default      | Description                                                        |
+| ------------------- | -------- | ------------ | ------------------------------------------------------------------ |
+| `PORT`              | no       | `3000`       | HTTP port                                                          |
+| `NODE_ENV`          | no       | —            | `development` / `production`                                       |
+| `DATABASE_URL`      | no       | —            | Full Postgres URL; if set, replaces the `DB_HOST`…`DB_NAME` vars   |
+| `DB_HOST`           | yes*     | —            | PostgreSQL host                                                    |
+| `DB_PORT`           | no       | `5432`       | PostgreSQL port                                                    |
+| `DB_USERNAME`       | yes*     | —            | Database user                                                      |
+| `DB_PASSWORD`       | yes*     | —            | Database password                                                  |
+| `DB_NAME`           | yes*     | —            | Database name                                                      |
+| `DB_SSL`            | no       | `false`      | `true` for cloud providers that require TLS (e.g. Neon)            |
+| `DB_SYNCHRONIZE`    | no       | `false`      | Auto-create tables from entities. Dev only; ignored in production. |
+| `DB_MIGRATIONS_RUN` | no       | prod: `true` | Run pending migrations on startup                                  |
+| `JWT_SECRET`        | yes      | —            | Long random secret, e.g. `openssl rand -hex 64`                    |
+| `JWT_EXPIRES_IN`    | yes      | —            | Token lifetime, e.g. `15m`, `1h`, `1d`                             |
+
+\* Not needed when `DATABASE_URL` is set.
+
+## Deployment
+
+- **Docker:** `docker build -t splitease .` then `docker run -p 3000:3000 --env-file .env -e NODE_ENV=production splitease`.
+- **Render:** `render.yaml` is a Blueprint for the web service and a managed PostgreSQL database.
+- With `NODE_ENV=production`, `synchronize` is off and pending migrations in `src/database/migrations` run automatically on startup.
 
 ## API Documentation
 
@@ -92,19 +102,19 @@ To try the protected routes:
 
 🔒 = requires `Authorization: Bearer <token>`
 
-| Method | Path                    | Auth | Description                                           |
-| ------ | ----------------------- | ---- | ----------------------------------------------------- |
-| GET    | `/health`               |      | Liveness check                                        |
-| POST   | `/auth/register`        |      | Create an account                                     |
-| POST   | `/auth/login`           |      | Log in → `{ accessToken }`                            |
-| GET    | `/auth/me`              | 🔒   | Current user                                          |
-| POST   | `/groups`               | 🔒   | Create a group (caller becomes admin)                 |
-| GET    | `/groups`               | 🔒   | List groups the caller belongs to                     |
-| GET    | `/groups/:id`           | 🔒   | Group details and members (members only)              |
-| POST   | `/groups/:id/members`   | 🔒   | Add a member by `email` or `userId` (admin only)      |
-| POST   | `/groups/:id/expenses`  | 🔒   | Add an expense split equally among participants       |
-| GET    | `/groups/:id/expenses`  | 🔒   | List expenses, paginated (`?page=1&limit=20`)         |
-| GET    | `/groups/:id/balances`  | 🔒   | Net balance per member and suggested settlements      |
+| Method | Path                   | Auth | Description                                      |
+| ------ | ---------------------- | ---- | ------------------------------------------------ |
+| GET    | `/health`              |      | Liveness check                                   |
+| POST   | `/auth/register`       |      | Create an account                                |
+| POST   | `/auth/login`          |      | Log in → `{ accessToken }`                       |
+| GET    | `/auth/me`             | 🔒   | Current user                                     |
+| POST   | `/groups`              | 🔒   | Create a group (caller becomes admin)            |
+| GET    | `/groups`              | 🔒   | List groups the caller belongs to                |
+| GET    | `/groups/:id`          | 🔒   | Group details and members (members only)         |
+| POST   | `/groups/:id/members`  | 🔒   | Add a member by `email` or `userId` (admin only) |
+| POST   | `/groups/:id/expenses` | 🔒   | Add an expense split equally among participants  |
+| GET    | `/groups/:id/expenses` | 🔒   | List expenses, paginated (`?page=1&limit=20`)    |
+| GET    | `/groups/:id/balances` | 🔒   | Net balance per member and suggested settlements |
 
 ### Example: balances
 
@@ -114,12 +124,16 @@ Suppose Alice pays 90.00 for dinner, split equally among Alice, Bob and Carol:
 {
   "balances": [
     { "name": "Alice", "paid": "90.00", "owed": "30.00", "net": "60.00" },
-    { "name": "Bob",   "paid": "0.00",  "owed": "30.00", "net": "-30.00" },
-    { "name": "Carol", "paid": "0.00",  "owed": "30.00", "net": "-30.00" }
+    { "name": "Bob", "paid": "0.00", "owed": "30.00", "net": "-30.00" },
+    { "name": "Carol", "paid": "0.00", "owed": "30.00", "net": "-30.00" }
   ],
   "settlements": [
-    { "from": { "name": "Bob" },   "to": { "name": "Alice" }, "amount": "30.00" },
-    { "from": { "name": "Carol" }, "to": { "name": "Alice" }, "amount": "30.00" }
+    { "from": { "name": "Bob" }, "to": { "name": "Alice" }, "amount": "30.00" },
+    {
+      "from": { "name": "Carol" },
+      "to": { "name": "Alice" },
+      "amount": "30.00"
+    }
   ]
 }
 ```
@@ -154,11 +168,15 @@ The tests do not need a database.
 
 ## Scripts
 
-| Command              | Description                      |
-| -------------------- | -------------------------------- |
-| `npm run start:dev`  | Start in watch mode              |
-| `npm run build`      | Compile to `dist/`               |
-| `npm run start:prod` | Run the compiled build           |
-| `npm test`           | Run unit tests                   |
-| `npm run test:cov`   | Run unit tests with coverage     |
-| `npm run format`     | Format sources with Prettier     |
+| Command                                                        | Description                                |
+| -------------------------------------------------------------- | ------------------------------------------ |
+| `npm run start:dev`                                            | Start in watch mode                        |
+| `npm run build`                                                | Compile to `dist/`                         |
+| `npm run start:prod`                                           | Run the compiled build                     |
+| `npm run migration:generate -- src/database/migrations/<Name>` | Generate a migration from entity changes   |
+| `npm run migration:run`                                        | Apply pending migrations (dev, from `src`) |
+| `npm run migration:revert`                                     | Revert the last migration                  |
+| `npm run migration:run:prod`                                   | Apply migrations from the compiled `dist`  |
+| `npm test`                                                     | Run unit tests                             |
+| `npm run test:cov`                                             | Run unit tests with coverage               |
+| `npm run format`                                               | Format sources with Prettier               |

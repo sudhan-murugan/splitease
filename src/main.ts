@@ -37,9 +37,10 @@ async function bootstrap() {
     }),
   );
 
-  const port = app.get(ConfigService).get<number>('PORT', 3000);
-  await app.listen(port);
-  console.log(`SplitEase API running on http://localhost:${port}`);
-  console.log(`API docs at http://localhost:${port}/api/docs`);
+  // PORT is injected by the host (e.g. Render); bind 0.0.0.0 so it's reachable from outside the container
+  const port = Number(app.get(ConfigService).get('PORT', 3000));
+  await app.listen(port, '0.0.0.0');
+  console.log(`SplitEase API listening on port ${port}`);
+  console.log(`API docs at /api/docs`);
 }
 void bootstrap();
